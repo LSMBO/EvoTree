@@ -1,77 +1,56 @@
 from nicegui import ui
-import requests
+from uniprot import fetch_taxonomy_id, fetch_uniprot_data
+from protein_table import create_protein_table
+from length_distribution import create_length_distribution_chart
+import asyncio
 
-ui.markdown('### Welcome to EvoTree!')
+ui.label('Welcome to EvoTree!').style('color: #654DF0; font-size: 2rem; font-weight: bold; margin-bottom: 1rem;')
 
-ui.link('Go to UniprotKB', 'https://www.uniprot.org/uniprotkb')
-ui.link('Go to NCBI', 'https://www.ncbi.nlm.nih.gov/')
+with ui.row().classes('w-[90%] gap-4 mx-auto border-2 border-[#654DF0] rounded-xl shadow-md p-4'):
 
-def fetch_uniprot_data(protein_query):
-    url = f"https://www.ebi.ac.uk/proteins/api/proteins?offset=0&size=500&protein={protein_query}"
-    response = requests.get(url, headers={"Accept": "application/json"})
-    if not response.ok:
-        response.raise_for_status()
-    return response.json()
+    with ui.row().classes('w-full gap-4 mx-auto'):
+        protein_input = ui.input('Protein name or ID *').classes('flex-grow')
+        taxonomy_input = ui.input('Taxonomy name or ID').classes('flex-grow')
 
-def create_protein_table(data):
-    columns = [
-        {'name': 'accession', 'label': 'Accession', 'field': 'accession', 'sortable': True},
-        {'name': 'id', 'label': 'ID', 'field': 'id', 'sortable': True},
-        {'name': 'taxid', 'label': 'Tax ID', 'field': 'taxid', 'sortable': True},
-        {'name': 'scientific_name', 'label': 'Scientific Name', 'field': 'scientific_name', 'sortable': True},
-        {'name': 'protein_name', 'label': 'Protein Name', 'field': 'protein_name', 'sortable': True},
-    ]
-    
-    rows = []
-    for item in data:
-        row = {}
-        row['accession'] = item.get('accession', 'N/A')
-        row['id'] = item.get('id', 'N/A')
+    with ui.expansion('Length filters (optional)', icon='tune', value=False).classes('w-full mx-auto'):
+        with ui.row().classes('w-full gap-4 mx-auto'):    
+            min_length_input = ui.input('Minimal sequence length (# residues)').classes('flex-grow')
+            max_length_input = ui.input('Maximal sequence length (# residues)').classes('flex-grow')
 
+    ui.button(  
+        'Search',
+        color="#654DF0",
+        on_click=lambda: search_protein(
+            protein_input.value,
+            taxonomy_input.value if 'taxonomy_input' in locals() else None
+        )
+    ).classes('px-6 text-white self-end')
+
+uniprot_table_container = ui.column().classes('w-full mt-4')
+length_distribution_container = ui.column().classes('w-full mt-4')
+loading_spinner = ui.spinner(size='lg', color='#654DF0').classes('mx-auto my-8')
+loading_spinner.set_visibility(False)
+
+
+async def search_protein(protein_name, taxonomy_name):
+    if protein_name:
+        loading_spinner.set_visibility(True)
+        uniprot_table_container.clear()
         try:
-            row['taxid'] = item['organism']['taxonomy']
-        except (KeyError, TypeError):
-            row['taxid'] = 'N/A'
-        
-        try:
-            row['scientific_name'] = item['organism']['names'][0]['value']
-        except (KeyError, TypeError, IndexError):
-            row['scientific_name'] = 'N/A'
-        
-        try:
-            row['protein_name'] = item['protein']['recommendedName']['fullName']['value']
-        except (KeyError, TypeError):
-            row['protein_name'] = 'N/A'
-        
-        rows.append(row)
-    print(data[0]['gene'])
-    
-    return ui.table(
-        columns=columns,
-        rows=rows,
-        row_key='accession'
-    ).classes('w-full h-96')
-
-def search_protein(value):
-    if value:        
-        results_container.clear()
-        try:
-            response_body = fetch_uniprot_data(value)
-            with results_container:
-                ui.markdown(f'**{len(response_body)} results found**')
-                if response_body:
-                    create_protein_table(response_body)
-                    
+            loop = asyncio.get_event_loop()
+            taxid = await loop.run_in_executor(None, fetch_taxonomy_id, taxonomy_name) if taxonomy_name else None
+            proteins = await loop.run_in_executor(None, fetch_uniprot_data, protein_name, taxid)
+            species_count = len(set(protein['organism']['scientificName'] for protein in proteins))
+            with uniprot_table_container:
+                ui.markdown(f'**"{protein_name}" found {len(proteins)} times in {species_count} different species in UniprotKB**')
+                if proteins:
+                    create_protein_table(proteins)
+                    create_length_distribution_chart(proteins)
         except Exception as e:
-            with results_container:
+            with uniprot_table_container:
                 ui.markdown(f'**Error:** {str(e)}')
+        loading_spinner.set_visibility(False)
     else:
-        ui.notify('Please enter a protein name or ID.')
-
-with ui.row().classes('w-[90%] gap-4 mx-auto'):
-    protein_input = ui.input('Enter a protein name or ID:').classes('flex-grow')
-    ui.button('Search', color="#654DF0", on_click=lambda: search_protein(protein_input.value)).classes('px-6 text-white')
-
-results_container = ui.column().classes('w-full mt-4')
+        ui.notify('Please enter a protein name.')
 
 ui.run()
