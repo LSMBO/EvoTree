@@ -1,22 +1,6 @@
 import requests
 import time
 
-def requests_get(url, params):
-    attempt = 0
-    while attempt < 3:
-        try:
-            response = requests.get(url, params=params)
-            if response.status_code == 200:
-                return response
-            else:
-                print(f"Error: Received status code {response.status_code}")
-        except requests.exceptions.RequestException as e:
-            print(f"Attempt {attempt + 1} failed: {e}")
-        attempt += 1
-        if attempt < 3:
-            print(f"Retrying in 5 seconds...")
-            time.sleep(5)
-    raise Exception(f"Failed to fetch data from {url} after 3 attempts")
 
 def fetch_taxonomy_id(taxonomy_name):
     base_url = "https://rest.uniprot.org/taxonomy/search"
@@ -29,17 +13,29 @@ def fetch_taxonomy_id(taxonomy_name):
     if response and response.json()["results"]:
         data = response.json()['results']
         for taxo in data:
+            if taxonomy_name.isdigit():
+                if taxo['taxonId'] == int(taxonomy_name):
+                    return taxo['taxonId']
             if taxo['scientificName'].lower() == taxonomy_name.lower():
                 return taxo['taxonId']
+            
     raise ValueError(f"Taxonomy name '{taxonomy_name}' not found.")
 
-def fetch_uniprot_data(protein_name, taxid):
+def fetch_uniprot_data(protein_name, taxid=None, min_length=None, max_length=None):
     protein_name = protein_name.replace(" ", "+")
     base_url = "https://rest.uniprot.org/uniprotkb/search"
+    query_parts = [f"protein_name:{protein_name}"]
+    
     if taxid is not None:
-        query = f"protein_name:{protein_name} AND taxonomy_id:{taxid}"
-    else:
-        query = f"protein_name:{protein_name}"
+        query_parts.append(f"taxonomy_id:{taxid}")
+    if min_length is not None and max_length is not None:
+        query_parts.append(f"length:[{min_length} TO {max_length}]")
+    elif min_length is not None:
+        query_parts.append(f"length:[{min_length} TO *]")
+    elif max_length is not None:
+        query_parts.append(f"length:[* TO {max_length}]")
+    
+    query = " AND ".join(query_parts)
     params = {
         "query": query,
         "format": "json",
@@ -47,10 +43,21 @@ def fetch_uniprot_data(protein_name, taxid):
         "size": 500
     }
     
-    url = f"https://rest.uniprot.org/uniprotkb/search?query=(protein_name:{protein_name})%20AND%20(taxonomy_id:{taxid})&format=json"
-    print(url)
-    response = requests_get(base_url, params)
-    if response and response.json()["results"]:
-        return response.json()["results"]
-    return {}
+    results = requests_get(base_url, params)
+    if results:
+        return results
+    return []
 
+def requests_get(url, params):
+    results = []
+    try:
+        response = requests.get(url, params=params)
+        if response.status_code == 200:
+            results.extend(response.json().get("results", []))
+            while response.links.get("next", {}).get("url"):
+                next_url = response.links["next"]["url"]
+                response = requests.get(next_url, params=None)
+                results.extend(response.json().get("results", []))
+            return results
+    except requests.exceptions.RequestException as e:
+        print(f"Request failed: {e}")

@@ -22,7 +22,9 @@ with ui.row().classes('w-[90%] gap-4 mx-auto border-2 border-[#654DF0] rounded-x
         color="#654DF0",
         on_click=lambda: search_protein(
             protein_input.value,
-            taxonomy_input.value if 'taxonomy_input' in locals() else None
+            taxonomy_input.value,
+            min_length_input.value,
+            max_length_input.value
         )
     ).classes('px-6 text-white self-end')
 
@@ -32,14 +34,16 @@ loading_spinner = ui.spinner(size='lg', color='#654DF0').classes('mx-auto my-8')
 loading_spinner.set_visibility(False)
 
 
-async def search_protein(protein_name, taxonomy_name):
+async def search_protein(protein_name, taxonomy_name, min_length, max_length):
     if protein_name:
         loading_spinner.set_visibility(True)
         uniprot_table_container.clear()
         try:
             loop = asyncio.get_event_loop()
+            min_length = int(min_length) if min_length else None
+            max_length = int(max_length) if max_length else None
             taxid = await loop.run_in_executor(None, fetch_taxonomy_id, taxonomy_name) if taxonomy_name else None
-            proteins = await loop.run_in_executor(None, fetch_uniprot_data, protein_name, taxid)
+            proteins = await loop.run_in_executor(None, fetch_uniprot_data, protein_name, taxid, min_length, max_length)
             species_count = len(set(protein['organism']['scientificName'] for protein in proteins))
             with uniprot_table_container:
                 ui.markdown(f'**"{protein_name}" found {len(proteins)} times in {species_count} different species in UniprotKB**')
