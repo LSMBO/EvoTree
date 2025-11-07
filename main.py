@@ -1,60 +1,97 @@
 from nicegui import ui
-from uniprot import fetch_taxonomy_id, fetch_uniprot_data
-from protein_table import create_protein_table
-from length_distribution import create_length_distribution_chart
-import asyncio
+import requests
+from datetime import datetime
+import config
+import styles
+from search import search_protein, search_genes
+from protein_gene_table import create_protein_table, create_gene_table
+from sequence_selection import show_sequence_selection_form
 
-ui.label('Welcome to EvoTree!').style('color: #654DF0; font-size: 2rem; font-weight: bold; margin-bottom: 1rem;')
+with ui.row().classes('w-full justify-center mb-4'):
+    ui.label('EvoTree').style(f'color: {config.VIOLET_COLOR}; font-size: 2rem; font-weight: bold; text-align: center;')
 
-with ui.row().classes('w-[90%] gap-4 mx-auto border-2 border-[#654DF0] rounded-xl shadow-md p-4'):
 
+async def handle_search_proteins(protein_name, taxonomy_name, selected_rank):
+    if not protein_name.strip():
+        ui.notify('Please enter a protein name.', color='warning')
+        return
+    
+    result = await search_protein(protein_name, taxonomy_name, selected_rank)
+    if result and result['success']:
+        create_protein_table(result["uniprot_proteins"], result["ncbi_proteins"])
+        show_sequence_selection_form()
+
+async def handle_search_genes(gene_name, taxonomy_name, selected_rank):
+    if not gene_name.strip():
+        ui.notify('Please enter a gene name.', color='warning')
+        return
+    
+    result = await search_genes(gene_name, taxonomy_name, selected_rank)
+    if result and result['success']:
+        create_gene_table(result["ncbi_genes"])
+        show_sequence_selection_form()
+
+
+with ui.card().classes(f'w-full border-2 border-[{config.VIOLET_COLOR}] rounded-xl shadow-lg p-6'):
     with ui.row().classes('w-full gap-4 mx-auto'):
-        protein_input = ui.input('Protein name or ID *').classes('flex-grow')
+        input_name = ui.input('Protein or Gene name*').classes('flex-grow')
         taxonomy_input = ui.input('Taxonomy name or ID').classes('flex-grow')
+        rank_select = ui.select(
+            options=['species', 'subspecies', 'strain'],
+            label='Rank',
+            value='species'
+        ).classes('flex-grow')
+    
+    with ui.row().classes('w-full gap-4'):
+        search_proteins_button = ui.button(
+            'Search Proteins',
+            on_click=lambda: handle_search_proteins(
+                input_name.value,
+                taxonomy_input.value,
+                rank_select.value
+            )
+        ).classes('flex-1')
+        styles.apply_violet_color(search_proteins_button)
+        
+        search_genes_button = ui.button(
+            'Search Genes (mRNA)',
+            on_click=lambda: handle_search_genes(
+                input_name.value,
+                taxonomy_input.value,
+                rank_select.value
+            )
+        ).classes('flex-1')
+        styles.apply_violet_color(search_genes_button)
 
-    with ui.expansion('Length filters (optional)', icon='tune', value=False).classes('w-full mx-auto'):
-        with ui.row().classes('w-full gap-4 mx-auto'):    
-            min_length_input = ui.input('Minimal sequence length (# residues)').classes('flex-grow')
-            max_length_input = ui.input('Maximal sequence length (# residues)').classes('flex-grow')
+config.table_container = ui.card().classes(f'w-full border-2 border-[{config.VIOLET_COLOR}] rounded-xl shadow-lg p-6')
+config.table_container.set_visibility(False)
 
-    ui.button(  
-        'Search',
-        color="#654DF0",
-        on_click=lambda: search_protein(
-            protein_input.value,
-            taxonomy_input.value,
-            min_length_input.value,
-            max_length_input.value
-        )
-    ).classes('px-6 text-white self-end')
+config.sequence_selection_container = ui.card().classes(f'w-full border-2 border-[{config.VIOLET_COLOR}] rounded-xl shadow-lg p-6')
+config.sequence_selection_container.set_visibility(False)
 
-uniprot_table_container = ui.column().classes('w-full mt-4')
-length_distribution_container = ui.column().classes('w-full mt-4')
-loading_spinner = ui.spinner(size='lg', color='#654DF0').classes('mx-auto my-8')
-loading_spinner.set_visibility(False)
+config.length_distribution_container = ui.column().classes('w-full mt-4') 
+config.length_distribution_container.set_visibility(False)
+
+config.pipeline1_container = ui.card().classes(f'w-full border-2 border-[{config.VIOLET_COLOR}] rounded-xl shadow-lg p-6')
+config.pipeline1_container.set_visibility(False)
+
+config.pipeline2_launcher_container = ui.card().classes(f'w-full border-2 border-[{config.VIOLET_COLOR}] rounded-xl shadow-lg p-6')
+config.pipeline2_launcher_container.set_visibility(False)
+
+config.pipeline2_container = ui.card().classes(f'w-full border-2 border-[{config.VIOLET_COLOR}] rounded-xl shadow-lg p-6')
+config.pipeline2_container.set_visibility(False)
+
+config.pipeline2_results = ui.card().classes(f'w-full border-2 border-[{config.VIOLET_COLOR}] rounded-xl shadow-lg p-6')
+config.pipeline2_results.set_visibility(False)
+
+config.loading_spinner = ui.spinner(size='lg', color=config.VIOLET_COLOR).classes('mx-auto my-8')
+config.loading_spinner.set_visibility(False)
 
 
-async def search_protein(protein_name, taxonomy_name, min_length, max_length):
-    if protein_name:
-        loading_spinner.set_visibility(True)
-        uniprot_table_container.clear()
-        try:
-            loop = asyncio.get_event_loop()
-            min_length = int(min_length) if min_length else None
-            max_length = int(max_length) if max_length else None
-            taxid = await loop.run_in_executor(None, fetch_taxonomy_id, taxonomy_name) if taxonomy_name else None
-            proteins = await loop.run_in_executor(None, fetch_uniprot_data, protein_name, taxid, min_length, max_length)
-            species_count = len(set(protein['organism']['scientificName'] for protein in proteins))
-            with uniprot_table_container:
-                ui.markdown(f'**"{protein_name}" found {len(proteins)} times in {species_count} different species in UniprotKB**')
-                if proteins:
-                    create_protein_table(proteins)
-                    create_length_distribution_chart(proteins)
-        except Exception as e:
-            with uniprot_table_container:
-                ui.markdown(f'**Error:** {str(e)}')
-        loading_spinner.set_visibility(False)
-    else:
-        ui.notify('Please enter a protein name.')
 
-ui.run()
+clear_flask = ui.button('Clear Flask TMP',
+          on_click=lambda: requests.post(f"{config.API_BASE_URL}/clear", json={"date_limit": datetime.now().strftime("%d%m%Y%H%M%S")})).classes('mt-20')
+styles.apply_default_color(clear_flask)
+styles.apply_full_width(clear_flask)
+
+ui.run(port=8080, show=True, reload=True)
