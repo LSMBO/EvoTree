@@ -1,6 +1,9 @@
 from nicegui import ui
 import requests
 from datetime import datetime
+import webbrowser
+import threading
+import time
 import config
 import styles
 from search import search_protein, search_genes
@@ -94,4 +97,14 @@ clear_flask = ui.button('Clear Flask TMP',
 styles.apply_default_color(clear_flask)
 styles.apply_full_width(clear_flask)
 
-ui.run(port=8080, show=True, reload=True)
+# ui.run(port=8080, show=True, reload=True)
+
+if __name__ == "__main__":
+    
+    def open_browser():
+        time.sleep(2)
+        webbrowser.open('http://localhost:8080')
+    
+    threading.Thread(target=open_browser, daemon=True).start()
+    
+    ui.run(host='localhost', port=8080, show=False)
