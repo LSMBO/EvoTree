@@ -1,0 +1,13 @@
+name: evotree
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - biopython
+  - requests
+  - pip:
+    - nicegui>=2.21.0
+    - httpx
