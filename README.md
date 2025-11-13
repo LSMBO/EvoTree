@@ -18,6 +18,8 @@ A web-based application for phylogenetic analysis using NCBI and UniProt databas
    - Download from: https://docs.conda.io/projects/miniconda/en/latest/
    - Follow the installation instructions for your operating system
    - Make sure conda is added to your system PATH
+   - **Initialize conda**: Open a new terminal and run `conda init`
+   - Restart your terminal after initialization
 
 ### Setup Instructions
 
@@ -107,7 +109,10 @@ python main.py
 ### Common Issues
 **1. Conda environment creation fails**
 ```bash
-# Try with explicit solver
+# Initialize conda first if not done
+conda init
+
+# Restart terminal, then try with explicit solver
 conda env create -f environment.yml --solver=classic
 ```
 

@@ -99,12 +99,5 @@ styles.apply_full_width(clear_flask)
 
 # ui.run(port=8080, show=True, reload=True)
 
-if __name__ == "__main__":
-    
-    def open_browser():
-        time.sleep(2)
-        webbrowser.open('http://localhost:8080')
-    
-    threading.Thread(target=open_browser, daemon=True).start()
-    
-    ui.run(host='localhost', port=8080, show=False)
+if __name__ in {"__main__", "__mp_main__"}:
+    ui.run(host='localhost', port=8080, show=True, reload=True)
