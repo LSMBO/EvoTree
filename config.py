@@ -16,6 +16,21 @@ current_bmge_file = None
 current_iqtree_file = None
 current_nw_distance_file = None
 
+pipeline1_data = {
+    'fasta_file': None,
+    'mafft_file': None,
+    'iqtree_file': None,
+    'nw_distance_file': None
+}
+
+pipeline2_data = {
+    'fasta_file': None,
+    'mafft_file': None,
+    'bmge_file': None,
+    'iqtree_file': None,
+    'nw_distance_file': None
+}
+
 # Search and filter parameters for download
 search_params = {
     'term': None,

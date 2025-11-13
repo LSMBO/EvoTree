@@ -1,3 +1,4 @@
+import os
 import asyncio
 import httpx
 from nicegui import ui
@@ -7,6 +8,31 @@ from uniprot import create_uniprot_fasta
 from ncbi import create_ncbi_fasta
 from utils import download_file_from_server
 import styles
+
+async def create_fasta_from_branch_length(download, original_fasta_file, nw_distance_file):
+    identifier = datetime.now().strftime("%d%m%Y%H%M%S")
+    bl_fasta_file = f"{identifier}_bl.fasta"
+    config.loading_spinner.set_visibility(True)
+    
+    try:
+        async with httpx.AsyncClient(timeout=360000) as client:
+            response = await client.post(
+                "http://134.158.151.55/create_bl_fasta", 
+                json={"original_fasta_file": original_fasta_file, "nw_distance_file": nw_distance_file, "bl_fasta_file": bl_fasta_file}
+            )
+            if response.status_code == 200:
+                data = response.json()
+                if download:
+                    download_file_from_server(data['file'])
+                return data['file']
+            else:
+                print(f"Flask request failed with status code: {response.status_code}")
+                return 'Failed'
+    except Exception as e:
+        print(f"Error creating FASTA: {e}")
+        return 'Failed'
+    finally:
+        config.loading_spinner.set_visibility(False)
 
 async def create_fasta(download):
     min_length = config.search_params['min_length']
@@ -105,7 +131,7 @@ def pipeline2_launcher():
             ).classes('text-lg')
             create_species_fasta_btn = ui.button(
                 'Download FASTA',
-                on_click=lambda: ui.notify('Feature coming soon!', color='info')
+                on_click=lambda: create_fasta_from_branch_length(True, config.current_fasta_file, config.current_nw_distance_file)
             )
             styles.apply_purple_color(create_species_fasta_btn)
             styles.apply_download_icon(create_species_fasta_btn)
@@ -127,13 +153,13 @@ def pipeline2_launcher():
 
 async def handle_pipeline2():
     try:
-        result = await run_full_pipeline(config.pipeline2_container, run_bmge=True)
-        if result == "success":
+        config.pipeline2_data = await run_full_pipeline(config.pipeline2_container, run_bmge=True)
+        if config.pipeline2_data != "failed":
             ui.notify('Pipeline completed successfully!', color='positive')
             with config.pipeline2_results:
                 config.pipeline2_results.set_visibility(True)
                 ui.label('Phylogenetic Analysis Results').classes(f'text-2xl font-bold text-[{config.VIOLET_COLOR}] mb-6')
-                show_download_results(config.pipeline2_results, run_bmge=True)
+                show_download_results(config.pipeline2_results, config.pipeline2_data, run_bmge=True)
 
                 ui.markdown(
                     "You can combine the phylogenetic distances of the branch length file with other life history traits of the species "
@@ -180,7 +206,11 @@ async def run_full_pipeline(pipeline_container, run_bmge=False):
     try:
         # Step 1: Create FASTA
         await update_progress(progress_label, step_indicators, 0, "Creating FASTA file...")
-        config.current_fasta_file = await create_fasta(download=False)
+        if run_bmge:
+            config.current_fasta_file = await create_fasta_from_branch_length(download=False, original_fasta_file=config.current_fasta_file, nw_distance_file=config.current_nw_distance_file)
+        else:
+            config.current_fasta_file = await create_fasta(download=False)
+            
         if config.current_fasta_file == 'Failed':
             raise Exception("Failed to create FASTA file")
         
@@ -211,22 +241,28 @@ async def run_full_pipeline(pipeline_container, run_bmge=False):
         
         await update_progress(progress_label, step_indicators, 5, "")
 
-        return "success"
+        return {
+            'fasta_file': config.current_fasta_file,
+            'mafft_file': config.current_mafft_file,
+            'bmge_file': config.current_bmge_file,
+            'iqtree_file': config.current_iqtree_file,
+            'nw_distance_file': config.current_nw_distance_file
+        }
     except Exception as e:
         progress_label.text = f"Pipeline failed: {str(e)}"
         ui.notify(f'Pipeline error: {str(e)}', color='red')
         return "failed"
 
-def show_download_results(container, run_bmge):
+def show_download_results(container, pipeline_data, run_bmge):
     with container:        
         files_to_download = [
             {
-                'file': config.current_fasta_file,
+                'file': pipeline_data['fasta_file'],
                 'label': '📄 Original FASTA',
                 'color': '#FF6B35'
             },
             {
-                'file': config.current_mafft_file,
+                'file': pipeline_data['mafft_file'],
                 'label': '⛓️ MAFFT Alignment',
                 'color': '#F7931E'
             }
@@ -234,19 +270,19 @@ def show_download_results(container, run_bmge):
         
         if run_bmge and config.current_bmge_file != config.current_mafft_file:
             files_to_download.append({
-                'file': config.current_bmge_file,
+                'file': pipeline_data['bmge_file'],
                 'label': '✂️ BMGE Filtered',
                 'color': '#FFD23F'
             })
         
         files_to_download.extend([
             {
-                'file': config.current_iqtree_file,
+                'file': pipeline_data['iqtree_file'],
                 'label': '🌴 IQ-TREE Result',
                 'color': '#06FFA5'
             },
             {
-                'file': config.current_nw_distance_file,
+                'file': pipeline_data['nw_distance_file'],
                 'label': '📊 Branch Length',
                 'color': '#4ECDC4'
             }

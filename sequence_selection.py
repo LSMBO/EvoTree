@@ -189,9 +189,6 @@ def apply_filter(uniprot_only, ncbi_only, having_mrna, min_length, max_length):
         ui.notify(f'No {data_type} match your filter criteria', color='orange')
 
 async def show_mrna_sequence_selection():
-    """
-    Retrieve mRNA sequences from selected proteins asynchronously
-    """
     try:
         # Prepare mRNA accessions from selected proteins
         mrna_accessions = []
@@ -306,14 +303,14 @@ async def handle_pipeline1():
         
         config.pipeline2_results.clear()
         config.pipeline2_results.set_visibility(False)
-        
-        result = await run_full_pipeline(config.pipeline1_container, run_bmge=False)
-        if result == "success":
+
+        config.pipeline1_data = await run_full_pipeline(config.pipeline1_container, run_bmge=False)
+        if config.pipeline1_data != "failed":
             ui.notify('Pipeline completed successfully!', color='positive')
             with config.pipeline2_launcher_container:
                 config.pipeline2_launcher_container.set_visibility(True)
                 ui.label('Phylogenetic Analysis Results').classes(f'text-2xl font-bold text-[{config.VIOLET_COLOR}] mb-6')
-                show_download_results(config.pipeline2_launcher_container, run_bmge=False)
+                show_download_results(config.pipeline2_launcher_container, config.pipeline1_data, run_bmge=False)
                 pipeline2_launcher()
         else:
             ui.notify('Pipeline failed', color='negative')
