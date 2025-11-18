@@ -4,7 +4,7 @@ import asyncio
 import config
 import styles
 from length_distribution import create_length_distribution_chart, get_sequence_length
-from pipeline import create_fasta, run_full_pipeline, pipeline2_launcher, show_download_results
+from pipeline import create_fasta
 from ncbi import mrna_from_mrna_accession
 
 def show_sequence_selection_form():    
@@ -304,14 +304,13 @@ async def handle_pipeline1():
         config.pipeline2_results.clear()
         config.pipeline2_results.set_visibility(False)
 
+        from pipeline import run_full_pipeline
         config.pipeline1_data = await run_full_pipeline(config.pipeline1_container, run_bmge=False)
+        
         if config.pipeline1_data != "failed":
             ui.notify('Pipeline completed successfully!', color='positive')
-            with config.pipeline2_launcher_container:
-                config.pipeline2_launcher_container.set_visibility(True)
-                ui.label('Phylogenetic Analysis Results').classes(f'text-2xl font-bold text-[{config.VIOLET_COLOR}] mb-6')
-                show_download_results(config.pipeline2_launcher_container, config.pipeline1_data, run_bmge=False)
-                pipeline2_launcher()
+            from pipeline_results import show_pipeline1_results
+            show_pipeline1_results(config.pipeline1_data)
         else:
             ui.notify('Pipeline failed', color='negative')
     except Exception as e:

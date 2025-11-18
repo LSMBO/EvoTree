@@ -1,4 +1,3 @@
-import os
 import asyncio
 import httpx
 from nicegui import ui
@@ -7,7 +6,11 @@ import config
 from uniprot import create_uniprot_fasta
 from ncbi import create_ncbi_fasta
 from utils import download_file_from_server
-import styles
+
+
+# =============================================================================
+# FASTA CREATION FUNCTIONS
+# =============================================================================
 
 async def create_fasta_from_branch_length(download, original_fasta_file, nw_distance_file):
     identifier = datetime.now().strftime("%d%m%Y%H%M%S")
@@ -17,8 +20,12 @@ async def create_fasta_from_branch_length(download, original_fasta_file, nw_dist
     try:
         async with httpx.AsyncClient(timeout=360000) as client:
             response = await client.post(
-                "http://134.158.151.55/create_bl_fasta", 
-                json={"original_fasta_file": original_fasta_file, "nw_distance_file": nw_distance_file, "bl_fasta_file": bl_fasta_file}
+                f"{config.API_BASE_URL}/create_bl_fasta",
+                json={
+                    "original_fasta_file": original_fasta_file,
+                    "nw_distance_file": nw_distance_file,
+                    "bl_fasta_file": bl_fasta_file
+                }
             )
             if response.status_code == 200:
                 data = response.json()
@@ -34,11 +41,12 @@ async def create_fasta_from_branch_length(download, original_fasta_file, nw_dist
     finally:
         config.loading_spinner.set_visibility(False)
 
-async def create_fasta(download):
+async def create_fasta(download=False):
     min_length = config.search_params['min_length']
     max_length = config.search_params['max_length']
     uniprot_file_path = None
     ncbi_file_path = None
+    
     if config.search_params['uniprot']:
         try:
             base_url = "https://rest.uniprot.org/uniprotkb/stream"
@@ -49,51 +57,62 @@ async def create_fasta(download):
             uniprot_file_path = await create_uniprot_fasta(base_url, params, config.loading_spinner)
             if uniprot_file_path == "Failed":
                 print(f"Failed to create UniProt FASTA file.")
-                return
+                return 'Failed'
         except Exception as e:
             print(f"Error occurred (create_uniprot_fasta): {e}")
-            ui.notify(f'Error: {str(e)}', color='red')            
+            ui.notify(f'Error: {str(e)}', color='red')
+            return 'Failed'
 
     if config.search_params['ncbi']:
         try:
             ncbi_file_path = await create_ncbi_fasta(config.selected_data, config.loading_spinner)
             if ncbi_file_path == "Failed":
                 print(f"Failed to create NCBI FASTA file.")
-                return
+                return 'Failed'
         except Exception as e:
-            print(f"Error occurred (create_ncbi_fasta p): {e}")
+            print(f"Error occurred (create_ncbi_fasta): {e}")
             ui.notify(f'Error: {str(e)}', color='red')
+            return 'Failed'
 
+    # Handle results
     if uniprot_file_path and ncbi_file_path:
         try:
             print(f"Merging UniProt file: {uniprot_file_path} and NCBI file: {ncbi_file_path}...")
             merged_fasta_path = await merge_uniprot_ncbi_fasta(uniprot_file_path, ncbi_file_path, config.loading_spinner)
             if merged_fasta_path == "Failed":
                 print(f"Failed to merge UniProt and NCBI FASTA files.")
-                return
+                return 'Failed'
             
             if download:
                 download_file_from_server(merged_fasta_path)
             return merged_fasta_path
         except Exception as e:
             ui.notify(f'Error: {str(e)}', color='red')
+            return 'Failed'
 
     elif uniprot_file_path:
         if download:
             download_file_from_server(uniprot_file_path)
         return uniprot_file_path
+    
     elif ncbi_file_path:
         if download:
             download_file_from_server(ncbi_file_path)
         return ncbi_file_path
+    
+    return 'Failed'
 
 async def merge_uniprot_ncbi_fasta(uniprot_file_path, ncbi_file_path, loading_spinner):
     identifier = datetime.now().strftime("%d%m%Y%H%M%S")
     fasta_file = f"{identifier}_Merged.fasta"
     loading_spinner.set_visibility(True)
+    
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.post("http://134.158.151.55/merge_uniprot_ncbi_fasta", json={"uniprot_file": uniprot_file_path, "ncbi_file": ncbi_file_path, "merged_file": fasta_file})
+            response = await client.post(
+                f"{config.API_BASE_URL}/merge_uniprot_ncbi_fasta",
+                json={"uniprot_file": uniprot_file_path, "ncbi_file": ncbi_file_path, "merged_file": fasta_file}
+            )
             if response.status_code == 200:
                 data = response.json()
                 print(f"Response from Flask: {data}")
@@ -106,65 +125,12 @@ async def merge_uniprot_ncbi_fasta(uniprot_file_path, ncbi_file_path, loading_sp
         return 'Failed'
     finally:
         loading_spinner.set_visibility(False)
-        
-def pipeline2_launcher():
-    config.pipeline2_launcher_container.set_visibility(True)
-    
-    with config.pipeline2_launcher_container:
-        ui.markdown(
-            "The phylogenetic analysis performed on the selected sequences has conducted to the selection of one sequence per species."
-        ).classes('text-lg mb-6')
-        
-        with ui.row():
-            ui.markdown(
-                "Download a FASTA file containing one representative sequence per species. "
-                "For nucleotide sequences, you may also continue your analysis on [DataMonkey](http://www.datamonkey.org/)."
-            ).classes('text-lg')
-            create_species_fasta_btn = ui.button(
-                'Download FASTA',
-                on_click=lambda: create_fasta_from_branch_length(True, config.current_fasta_file, config.current_nw_distance_file)
-            )
-            styles.apply_purple_color(create_species_fasta_btn)
-            styles.apply_download_icon(create_species_fasta_btn)
-            
-        with ui.row():
-            with ui.column():
-                ui.markdown(
-                    "Restart the phylogenetic analysis pipeline to obtain accurate phylogenetic distances between species."
-                ).classes('text-lg')
-                ui.markdown(
-                    "NB: The current results may be biased due to the presence of multiple sequences per species in the initial dataset."
-                ).classes('text-sm italic')
-            run_pipeline2_btn = ui.button(
-                'Build phylogenetic Tree',
-                on_click=lambda: handle_pipeline2()
-            )
-            styles.apply_violet_color(run_pipeline2_btn)
-            styles.apply_play_icon(run_pipeline2_btn)
 
-async def handle_pipeline2():
-    try:
-        config.pipeline2_data = await run_full_pipeline(config.pipeline2_container, run_bmge=True)
-        if config.pipeline2_data != "failed":
-            ui.notify('Pipeline completed successfully!', color='positive')
-            with config.pipeline2_results:
-                config.pipeline2_results.set_visibility(True)
-                ui.label('Phylogenetic Analysis Results').classes(f'text-2xl font-bold text-[{config.VIOLET_COLOR}] mb-6')
-                show_download_results(config.pipeline2_results, config.pipeline2_data, run_bmge=True)
 
-                ui.markdown(
-                    "You can combine the phylogenetic distances of the branch length file with other life history traits of the species "
-                    "to create a comprehensive dataset. This dataset could be used in a multivariate model "
-                    "to explore potential correlations and relationships between phylogenetic distances and "
-                    "species traits."
-                ).classes('text-lg')
-                
-                ui.markdown('Thanks for using EvoTree').classes('text-lg')
-        else:
-            ui.notify('Pipeline failed', color='negative')
-    except Exception as e:
-        ui.notify(f'Pipeline error: {str(e)}', color='negative')
-        
+# =============================================================================
+# PIPELINE EXECUTION FUNCTIONS  
+# =============================================================================
+
 async def run_full_pipeline(pipeline_container, run_bmge=False):
     pipeline_container.clear()
     pipeline_container.set_visibility(True)
@@ -244,54 +210,7 @@ async def run_full_pipeline(pipeline_container, run_bmge=False):
         ui.notify(f'Pipeline error: {str(e)}', color='red')
         return "failed"
 
-def show_download_results(container, pipeline_data, run_bmge):
-    with container:        
-        files_to_download = [
-            {
-                'file': pipeline_data['fasta_file'],
-                'label': '📄 Original FASTA',
-                'color': '#FF6B35'
-            },
-            {
-                'file': pipeline_data['mafft_file'],
-                'label': '⛓️ MAFFT Alignment',
-                'color': '#F7931E'
-            }
-        ]
-        
-        if run_bmge and config.current_bmge_file != config.current_mafft_file:
-            files_to_download.append({
-                'file': pipeline_data['bmge_file'],
-                'label': '✂️ BMGE Filtered',
-                'color': '#FFD23F'
-            })
-        
-        files_to_download.extend([
-            {
-                'file': pipeline_data['iqtree_file'],
-                'label': '🌴 IQ-TREE Result',
-                'color': '#06FFA5'
-            },
-            {
-                'file': pipeline_data['nw_distance_file'],
-                'label': '📊 Branch Length',
-                'color': '#4ECDC4'
-            }
-        ])
 
-        with ui.row().classes('w-full justify-between mb-6'):
-            for file_info in files_to_download:
-                if file_info['file']:
-                    with ui.column().classes('items-center'):
-                        ui.label(file_info['label']).classes('text-base font-medium')
-                        download_btn = ui.button(
-                        '', 
-                        on_click=lambda f=file_info['file']: download_file_from_server(f)
-                        ).classes('px-4 py-1')
-                        
-                        styles.apply_download_icon(download_btn)
-                        styles.apply_custom_color(download_btn, file_info['color'])
-            
 async def update_progress(progress_label, step_indicators, current_step, message):
     progress_label.text = message
     for i, (circle, color) in enumerate(step_indicators):            
