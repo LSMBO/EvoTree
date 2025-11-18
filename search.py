@@ -5,7 +5,6 @@ import config
 from uniprot import fetch_taxonomy, fetch_uniprot_data, fetch_rank
 from ncbi import fetch_ncbi_proteins, fetch_ncbi_genes
 
-# Variable globale pour gérer l'état de recherche
 current_search_task = None
 
 def reset_search_state():

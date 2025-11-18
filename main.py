@@ -100,4 +100,4 @@ styles.apply_full_width(clear_flask)
 # ui.run(port=8080, show=True, reload=True)
 
 if __name__ in {"__main__", "__mp_main__"}:
-    ui.run(host='localhost', port=8080, show=True, reload=True)
+    ui.run(host='localhost', port=8080, show=True, reload=True, title="EvoTree")

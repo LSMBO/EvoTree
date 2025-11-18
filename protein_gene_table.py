@@ -77,7 +77,6 @@ def create_uniprot_table(data):
             else:
                 row['protein_name'] = 'N/A'
         except (KeyError, TypeError, IndexError):
-            print(item)
             row['protein_name'] = 'N/A'
         try:
             row['gene_name'] = item['genes'][0]['geneName']['value']

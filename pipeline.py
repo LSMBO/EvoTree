@@ -39,15 +39,6 @@ async def create_fasta(download):
     max_length = config.search_params['max_length']
     uniprot_file_path = None
     ncbi_file_path = None
-    print("config search parameters:", config.search_params)
-    print("Length of all_proteins:", len(config.all_proteins))
-    print("Length of selected_proteins:", len(config.selected_proteins))
-    print("Length of uniprot_proteins:", len(config.uniprot_proteins))
-    print("Length of ncbi_proteins:", len(config.ncbi_proteins))
-    print("Length of ncbi_genes:", len(config.ncbi_genes))
-    print("Length of selected_genes:", len(config.selected_genes))
-    print("Length of selected_data:", len(config.selected_data))
-    print("Length of current_data:", len(config.current_data))
     if config.search_params['uniprot']:
         try:
             base_url = "https://rest.uniprot.org/uniprotkb/stream"
