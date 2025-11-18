@@ -164,28 +164,6 @@ def parse_genbank_proteins(xml_content):
     
     return proteins
 
-def parse_fasta_proteins(xml_content):
-    """
-    Parse proteins from FASTA XML
-    """
-    if not xml_content:
-        return []
-    
-    proteins = []
-    try:
-        root = ET.fromstring(xml_content)
-        seq_elements = root.findall('.//TSeq')
-        
-        for seq_elem in seq_elements:
-            protein = extract_fasta_protein_info(seq_elem)
-            if protein:
-                proteins.append(protein)
-                
-    except Exception as e:
-        print(f"Error parsing FASTA proteins: {e}")
-    
-    return proteins
-
 def parse_genbank_mrna(xml_content):
     """
     Parse mRNA sequences from GenBank XML (Nucleotide database)
@@ -245,32 +223,6 @@ def extract_genbank_protein_info(seq_elem):
         
     except Exception as e:
         print(f"Error extracting GenBank protein: {e}")
-        return None
-
-def extract_fasta_protein_info(seq_elem):
-    """
-    Extract protein information from FASTA XML element
-    """
-    try:
-        accession = seq_elem.findtext('TSeq_accver', 'Unknown')
-        sequence_length = int(seq_elem.findtext('TSeq_length', '0'))
-        taxid = seq_elem.findtext('TSeq_taxid', None)
-        scientific_name = seq_elem.findtext('TSeq_orgname', None)
-        title = seq_elem.findtext('TSeq_defline', '')
-        
-        protein_name = parse_protein_title(title)
-        
-        return {
-            'accession': accession,
-            'protein_name': protein_name,
-            'scientific_name': scientific_name,
-            'taxid': int(taxid) if taxid and taxid.isdigit() else 'N/A',
-            'sequence_length': sequence_length,
-            'database': 'NCBI'
-        }
-        
-    except Exception as e:
-        print(f"Error extracting FASTA protein: {e}")
         return None
 
 def extract_genbank_mrna_info(seq_elem):
@@ -415,6 +367,14 @@ def extract_mrna_id_from_text(text):
     match = re.search(pattern, text)
     return match.group(1) if match else None
 
+def is_query_in_name(search_term, name):
+    search_term = search_term.lower()
+    name = name.lower()
+    if search_term in name:
+        return True
+    else:
+        print("Wrong name:", name)
+        return False
 
 # =============================================================================
 # QUERY BUILDING FUNCTIONS
@@ -468,7 +428,10 @@ def search_proteins_by_name(protein_name, taxid=None, max_results=None):
                 # Retrieve details for this chunk
                 details_xml = ncbi_efetch_proteins_genbank(chunk_ids)
                 proteins = parse_genbank_proteins(details_xml)
-                all_proteins.extend(proteins)
+
+                relevant_proteins = [p for p in proteins if is_query_in_name(protein_name, p['protein_name'])]
+
+                all_proteins.extend(relevant_proteins)
                 
                 time.sleep(0.3)  # Rate limiting between EFetch calls
         
@@ -508,7 +471,10 @@ def search_genes_by_name(gene_name, taxid=None, max_results=None):
                 # Retrieve GenBank details for this chunk
                 details_xml = ncbi_efetch_mrna_genbank(chunk_ids)
                 mrna_sequences = parse_genbank_mrna(details_xml)
-                all_mrna.extend(mrna_sequences)
+
+                relevant_mrna = [m for m in mrna_sequences if is_query_in_name(gene_name, m['gene_name'])]
+
+                all_mrna.extend(relevant_mrna)
                 
                 time.sleep(0.3)  # Rate limiting between EFetch calls
         
