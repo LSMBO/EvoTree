@@ -12,6 +12,33 @@ from utils import download_file_from_server
 # FASTA CREATION FUNCTIONS
 # =============================================================================
 
+async def upload_custom_fasta_to_server(fasta_content, filename):
+    from datetime import datetime
+    identifier = datetime.now().strftime("%d%m%Y%H%M%S")
+    server_filename = f"{identifier}_{filename}"
+    
+    config.loading_spinner.set_visibility(True)
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.post(
+                f"{config.API_BASE_URL}/upload",
+                json={
+                    "content": fasta_content,
+                    "file_path": f"evotree/tmp/{server_filename}"
+                }
+            )
+            if response.status_code == 200:
+                data = response.json()
+                return data['file']
+            else:
+                print(f"Upload failed with status code: {response.status_code}")
+                return 'Failed'
+    except Exception as e:
+        print(f"Error uploading custom FASTA: {e}")
+        return 'Failed'
+    finally:
+        config.loading_spinner.set_visibility(False)
+
 async def create_fasta_from_branch_length(download, original_fasta_file, nw_distance_file):
     identifier = datetime.now().strftime("%d%m%Y%H%M%S")
     bl_fasta_file = f"{identifier}_bl.fasta"
@@ -42,12 +69,12 @@ async def create_fasta_from_branch_length(download, original_fasta_file, nw_dist
         config.loading_spinner.set_visibility(False)
 
 async def create_fasta(download=False):
-    min_length = config.search_params['min_length']
-    max_length = config.search_params['max_length']
+    min_length = config.selection_params['min_length']
+    max_length = config.selection_params['max_length']
     uniprot_file_path = None
     ncbi_file_path = None
     
-    if config.search_params['uniprot']:
+    if config.selection_params['uniprot']:
         try:
             base_url = "https://rest.uniprot.org/uniprotkb/stream"
             params = {
@@ -63,7 +90,7 @@ async def create_fasta(download=False):
             ui.notify(f'Error: {str(e)}', color='red')
             return 'Failed'
 
-    if config.search_params['ncbi']:
+    if config.selection_params['ncbi']:
         try:
             ncbi_file_path = await create_ncbi_fasta(config.selected_data, config.loading_spinner)
             if ncbi_file_path == "Failed":
@@ -136,10 +163,15 @@ async def run_full_pipeline(pipeline_container, run_bmge=False):
     pipeline_container.set_visibility(True)
     
     with pipeline_container:
-        pipeline_steps = [
-            {"name": "Creating FASTA file", "color": "#FF6B35"},
-            {"name": "Running MAFFT alignment", "color": "#F7931E"}, 
-        ]
+        pipeline_steps = []
+        
+        use_custom_fasta = config.select_sequence_active_tab == 'custom_fasta'
+        
+        if not use_custom_fasta:
+            pipeline_steps.append({"name": "Creating FASTA file", "color": "#FF6B35"})
+        
+        pipeline_steps.append({"name": "Running MAFFT alignment", "color": "#F7931E"})
+        
         if run_bmge:
             pipeline_steps += [{"name": "Filtering with BMGE", "color": "#FFD23F"}]
         pipeline_steps += [
@@ -161,25 +193,39 @@ async def run_full_pipeline(pipeline_container, run_bmge=False):
                 step_indicators.append((circle, step['color']))
     
     try:
-        # Step 1: Create FASTA
-        await update_progress(progress_label, step_indicators, 0, "Creating FASTA file...")
-        if run_bmge:
-            config.current_fasta_file = await create_fasta_from_branch_length(download=False, original_fasta_file=config.current_fasta_file, nw_distance_file=config.current_nw_distance_file)
+        step_offset = 0
+        
+        # Step 1: Custom FASTA upload OR Create FASTA from search
+        if use_custom_fasta:
+            # Upload custom FASTA to server
+            await update_progress(progress_label, step_indicators, 0, "Uploading custom FASTA file...")
+            config.current_fasta_file = await upload_custom_fasta_to_server(
+                config.custom_fasta_content, 
+                config.custom_fasta_filename
+            )
+            if config.current_fasta_file == 'Failed':
+                raise Exception("Failed to upload custom FASTA file")
         else:
-            config.current_fasta_file = await create_fasta(download=False)
-            
-        if config.current_fasta_file == 'Failed':
-            raise Exception("Failed to create FASTA file")
+            # Create FASTA from selected_data
+            await update_progress(progress_label, step_indicators, 0, "Creating FASTA file...")
+            if run_bmge:
+                config.current_fasta_file = await create_fasta_from_branch_length(download=False, original_fasta_file=config.current_fasta_file, nw_distance_file=config.current_nw_distance_file)
+            else:
+                config.current_fasta_file = await create_fasta(download=False)
+                
+            if config.current_fasta_file == 'Failed':
+                raise Exception("Failed to create FASTA file")
+            step_offset = 1
         
         # Step 2: MAFFT
-        await update_progress(progress_label, step_indicators, 1, "Running MAFFT alignment...")
+        await update_progress(progress_label, step_indicators, step_offset, "Running MAFFT alignment...")
         config.current_mafft_file = await run_mafft_pipeline(config.current_fasta_file)
         
         # config.current_mafft_file = "evotree/simul/29102025131303_Merged_mafft.fasta"
         
         if run_bmge:
             # Step 3: BMGE  
-            await update_progress(progress_label, step_indicators, 2, "Filtering with BMGE...")
+            await update_progress(progress_label, step_indicators, step_offset + 1, "Filtering with BMGE...")
             config.current_bmge_file = await run_bmge_pipeline(config.current_mafft_file)
             
             # config.current_bmge_file = "evotree/simul/29102025131303_Merged_mafft_bmge.fasta"
@@ -187,16 +233,16 @@ async def run_full_pipeline(pipeline_container, run_bmge=False):
             config.current_bmge_file = config.current_mafft_file
         
         # Step 4: IQTREE
-        await update_progress(progress_label, step_indicators, 2 if not run_bmge else 3, "Building phylogenetic tree...")
+        await update_progress(progress_label, step_indicators, step_offset + 1 if not run_bmge else step_offset + 2, "Building phylogenetic tree...")
         config.current_iqtree_file = await run_iqtree_pipeline(config.current_bmge_file)
         
         # config.current_iqtree_file = "evotree/simul/29102025131303_Merged_mafft_bmge.fasta.treefile"
         
         # Step 5: NW Distance
-        await update_progress(progress_label, step_indicators, 3 if not run_bmge else 4, "Calculating branch lengths...")
+        await update_progress(progress_label, step_indicators, step_offset + 2 if not run_bmge else step_offset + 3, "Calculating branch lengths...")
         config.current_nw_distance_file = await run_nw_distance_pipeline(config.current_iqtree_file)
         
-        await update_progress(progress_label, step_indicators, 5, "")
+        await update_progress(progress_label, step_indicators, len(pipeline_steps), "")
 
         return {
             'fasta_file': config.current_fasta_file,
@@ -209,7 +255,6 @@ async def run_full_pipeline(pipeline_container, run_bmge=False):
         progress_label.text = f"Pipeline failed: {str(e)}"
         ui.notify(f'Pipeline error: {str(e)}', color='red')
         return "failed"
-
 
 async def update_progress(progress_label, step_indicators, current_step, message):
     progress_label.text = message

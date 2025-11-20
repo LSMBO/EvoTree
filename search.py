@@ -7,159 +7,6 @@ from ncbi import fetch_ncbi_proteins, fetch_ncbi_genes
 
 current_search_task = None
 
-def reset_search_state():
-    """Reset all search-related UI components and config"""
-    # Clear containers
-    config.table_container.clear()
-    config.table_container.set_visibility(False)
-    
-    config.sequence_selection_container.clear()
-    config.sequence_selection_container.set_visibility(False)
-    
-    config.length_distribution_container.clear()
-    config.length_distribution_container.set_visibility(False)
-    
-    config.pipeline1_container.clear()
-    config.pipeline1_container.set_visibility(False)
-    
-    config.pipeline2_launcher_container.clear()
-    config.pipeline2_launcher_container.set_visibility(False)
-    
-    config.pipeline2_container.clear()
-    config.pipeline2_container.set_visibility(False)
-    
-    config.pipeline2_results.clear()
-    config.pipeline2_results.set_visibility(False)
-    
-    # Reset config data
-    config.uniprot_proteins = []
-    config.ncbi_proteins = []
-    config.ncbi_genes = []
-    config.all_proteins = []
-    config.selected_proteins = []
-    config.selected_genes = []
-    
-    # Hide loading spinner
-    config.loading_spinner.set_visibility(False)
-
-def start_search():
-    """Start a new search - reset state and show loading"""
-    global current_search_task
-    
-    # Cancel any ongoing search
-    if current_search_task and not current_search_task.done():
-        current_search_task.cancel()
-    
-    # Reset all UI components
-    reset_search_state()
-    
-    # Show loading spinner
-    config.loading_spinner.set_visibility(True)
-
-def finish_search(success=True):
-    """Finish search - hide loading and show table if successful"""
-    config.loading_spinner.set_visibility(False)
-    if success:
-        config.table_container.set_visibility(True)
-
-def extract_nucleotide_reference(cross_references):
-    """
-    Extract nucleotide reference from UniProt cross-references
-    """
-    if not cross_references:
-        return None
-    
-    refseq_ref = None
-    mrna_ref = None
-    
-    for ref in cross_references:
-        database = ref.get('database', '')
-        ref_id = ref.get('id', '')
-        
-        if database == 'RefSeq':
-            properties = ref.get('properties', [])
-            for prop in properties:
-                if prop.get('key') == 'NucleotideSequenceId':
-                    refseq_ref = prop.get('value')
-            
-        elif database == 'EMBL':
-            properties = ref.get('properties', [])
-            for prop in properties:
-                if prop.get('key') == 'MoleculeType' and prop.get('value') == 'mRNA':
-                    mrna_ref = ref_id
-                    break
-    
-    return refseq_ref or mrna_ref
-
-async def update_taxonomic_rank(items, rank_dict, selected_rank, taxid_key, name_key):
-    loop = asyncio.get_event_loop()
-    processed_items = []
-    
-    for item in items:
-        # Extract taxid and scientific name using the provided keys
-        if '.' in taxid_key:  # Handle nested keys like 'organism.taxonId'
-            keys = taxid_key.split('.')
-            taxid = item
-            for key in keys:
-                taxid = taxid.get(key) if isinstance(taxid, dict) else None
-        else:
-            taxid = item.get(taxid_key)
-            
-        if '.' in name_key:  # Handle nested keys like 'organism.scientificName'
-            keys = name_key.split('.')
-            scientific_name = item
-            for key in keys:
-                scientific_name = scientific_name.get(key) if isinstance(scientific_name, dict) else None
-        else:
-            scientific_name = item.get(name_key)
-        
-        # Only process rank if the scientific name has more than 2 words (not species level)
-        if scientific_name and scientific_name.count(' ') > 1:
-            if taxid in rank_dict:
-                updated_taxid, updated_scientific_name = rank_dict[taxid]
-            else:
-                updated_taxid, updated_scientific_name = await loop.run_in_executor(None, fetch_rank, taxid, selected_rank)
-                rank_dict[taxid] = (updated_taxid, updated_scientific_name)
-            
-            if not updated_taxid:
-                continue
-                
-            # Update the item with new taxonomic info
-            if '.' in taxid_key:
-                keys = taxid_key.split('.')
-                target = item
-                for key in keys[:-1]:
-                    target = target[key]
-                target[keys[-1]] = updated_taxid
-            else:
-                item[taxid_key] = updated_taxid
-                
-            if '.' in name_key:
-                keys = name_key.split('.')
-                target = item
-                for key in keys[:-1]:
-                    target = target[key]
-                target[keys[-1]] = updated_scientific_name
-            else:
-                item[name_key] = updated_scientific_name
-        
-        processed_items.append(item)
-    
-    return processed_items
-
-def count_species(items, taxid_key):
-    taxids = set()
-    for item in items:
-        if '.' in taxid_key:
-            keys = taxid_key.split('.')
-            taxid = item
-            for key in keys:
-                taxid = taxid.get(key) if isinstance(taxid, dict) else None
-        else:
-            taxid = item.get(taxid_key)
-        taxids.add(taxid if taxid else 'Unknown')
-    return len(taxids)
-
 async def search_genes(gene_name, taxonomy_name, selected_rank):
     global current_search_task
     
@@ -167,10 +14,8 @@ async def search_genes(gene_name, taxonomy_name, selected_rank):
         ui.notify('Please enter a gene name.')
         return {'success': False, 'error': 'No gene name provided'}
     
-    # Set search type for unified selection system
     config.current_search_type = 'gene'
     
-    # Start new search
     start_search()
     
     try:
@@ -182,24 +27,19 @@ async def search_genes(gene_name, taxonomy_name, selected_rank):
         
         loop = asyncio.get_event_loop()
         
-        # Get taxonomy if specified
         ui.notify('Searching in NCBI...', color='info')
         taxo = await loop.run_in_executor(None, fetch_taxonomy, taxonomy_name) if taxonomy_name else None
         taxid = taxo['taxid'] if taxo else None
         config.search_params['taxid'] = taxid     
         
         # Fetch genes from NCBI
-        ncbi_genes = await loop.run_in_executor(None, fetch_ncbi_genes, gene_name, taxid)
-        
-        # Update taxonomic ranks
+        ncbi_genes = await loop.run_in_executor(None, fetch_ncbi_genes, gene_name, taxid)        
         ncbi_genes_correct_rank = await update_taxonomic_rank(
             ncbi_genes, gene_rank_dict, selected_rank, 'taxid', 'scientific_name'
         )
         
         print("NCBI search completed.")
         config.ncbi_genes = ncbi_genes_correct_rank
-        config.selected_genes = config.ncbi_genes
-        config.current_data = config.ncbi_genes
         config.selected_data = config.ncbi_genes
 
         # Count species
@@ -311,8 +151,6 @@ async def search_protein(protein_name, taxonomy_name, selected_rank):
         config.uniprot_proteins = uniprot_proteins_correct_rank
         config.ncbi_proteins = ncbi_proteins_correct_rank
         config.all_proteins = uniprot_proteins_correct_rank + ncbi_proteins_correct_rank
-        config.selected_proteins = config.all_proteins
-        config.current_data = config.all_proteins
         config.selected_data = config.all_proteins
 
         # Count species
@@ -378,3 +216,141 @@ async def search_protein(protein_name, taxonomy_name, selected_rank):
         
         return {'success': False, 'error': str(e)}
         
+def reset_search_state():
+    config.table_container.clear()
+    config.table_container.set_visibility(False)
+    
+    config.sequence_selection_container.clear()
+    config.sequence_selection_container.set_visibility(False)
+    
+    config.length_distribution_container.clear()
+    config.length_distribution_container.set_visibility(False)
+    
+    config.pipeline1_container.clear()
+    config.pipeline1_container.set_visibility(False)
+    
+    config.pipeline2_launcher_container.clear()
+    config.pipeline2_launcher_container.set_visibility(False)
+    
+    config.pipeline2_container.clear()
+    config.pipeline2_container.set_visibility(False)
+    
+    config.pipeline2_results.clear()
+    config.pipeline2_results.set_visibility(False)
+    
+    config.uniprot_proteins = []
+    config.ncbi_proteins = []
+    config.ncbi_genes = []
+    config.all_proteins = []
+    
+    config.loading_spinner.set_visibility(False)
+
+def start_search():
+    global current_search_task
+    
+    # Cancel any ongoing search
+    if current_search_task and not current_search_task.done():
+        current_search_task.cancel()
+    
+    reset_search_state()
+    
+    config.loading_spinner.set_visibility(True)
+
+def finish_search(success=True):
+    config.loading_spinner.set_visibility(False)
+    if success:
+        config.table_container.set_visibility(True)
+
+def extract_nucleotide_reference(cross_references):
+    if not cross_references:
+        return None
+    
+    refseq_ref = None
+    mrna_ref = None
+    
+    for ref in cross_references:
+        database = ref.get('database', '')
+        ref_id = ref.get('id', '')
+        
+        if database == 'RefSeq':
+            properties = ref.get('properties', [])
+            for prop in properties:
+                if prop.get('key') == 'NucleotideSequenceId':
+                    refseq_ref = prop.get('value')
+            
+        elif database == 'EMBL':
+            properties = ref.get('properties', [])
+            for prop in properties:
+                if prop.get('key') == 'MoleculeType' and prop.get('value') == 'mRNA':
+                    mrna_ref = ref_id
+                    break
+    
+    return refseq_ref or mrna_ref
+
+async def update_taxonomic_rank(items, rank_dict, selected_rank, taxid_key, name_key):
+    loop = asyncio.get_event_loop()
+    processed_items = []
+    
+    for item in items:
+        if '.' in taxid_key:
+            keys = taxid_key.split('.')
+            taxid = item
+            for key in keys:
+                taxid = taxid.get(key) if isinstance(taxid, dict) else None
+        else:
+            taxid = item.get(taxid_key)
+            
+        if '.' in name_key:
+            keys = name_key.split('.')
+            scientific_name = item
+            for key in keys:
+                scientific_name = scientific_name.get(key) if isinstance(scientific_name, dict) else None
+        else:
+            scientific_name = item.get(name_key)
+        
+        # Only process rank if the scientific name has more than 2 words (not species level)
+        if scientific_name and scientific_name.count(' ') > 1:
+            if taxid in rank_dict:
+                updated_taxid, updated_scientific_name = rank_dict[taxid]
+            else:
+                updated_taxid, updated_scientific_name = await loop.run_in_executor(None, fetch_rank, taxid, selected_rank)
+                rank_dict[taxid] = (updated_taxid, updated_scientific_name)
+            
+            if not updated_taxid:
+                continue
+                
+            if '.' in taxid_key:
+                keys = taxid_key.split('.')
+                target = item
+                for key in keys[:-1]:
+                    target = target[key]
+                target[keys[-1]] = updated_taxid
+            else:
+                item[taxid_key] = updated_taxid
+                
+            if '.' in name_key:
+                keys = name_key.split('.')
+                target = item
+                for key in keys[:-1]:
+                    target = target[key]
+                target[keys[-1]] = updated_scientific_name
+            else:
+                item[name_key] = updated_scientific_name
+        
+        processed_items.append(item)
+    
+    return processed_items
+
+def count_species(items, taxid_key):
+    taxids = set()
+    for item in items:
+        if '.' in taxid_key:
+            keys = taxid_key.split('.')
+            taxid = item
+            for key in keys:
+                taxid = taxid.get(key) if isinstance(taxid, dict) else None
+        else:
+            taxid = item.get(taxid_key)
+        taxids.add(taxid if taxid else 'Unknown')
+    return len(taxids)
+

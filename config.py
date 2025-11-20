@@ -31,30 +31,33 @@ pipeline2_data = {
     'nw_distance_file': None
 }
 
-# Search and filter parameters for download
 search_params = {
     'term': None,
     'taxid': None,
+    'uniprot': True,
+    'ncbi': True
+}
+
+selection_params = {
     'min_length': '*',
     'max_length': '*',
     'uniprot': True,
     'ncbi': True
 }
 
-# Data for protein and gene searches
 current_search_type = None  # 'protein' or 'gene'
 all_proteins = []
-selected_proteins = []
 uniprot_proteins = []
 ncbi_proteins = []
 
-# Gene data
 ncbi_genes = []
-selected_genes = []
 
-# Unified selection data (points to the currently selected data based on search type)
-current_data = []  # Will point to selected_proteins or selected_genes
-selected_data = []  # Alias for current_data for backward compatibility
+selected_data = []
+
+# Custom FASTA upload variables
+select_sequence_active_tab = 'sequences_from_search'  # 'sequences_from_search' or 'custom_fasta'
+custom_fasta_content = None  # Content of uploaded custom FASTA file
+custom_fasta_filename = None  # Filename of uploaded custom FASTA file
 
 use_mrna_from_proteins_button = None
 

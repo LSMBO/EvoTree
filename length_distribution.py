@@ -3,8 +3,6 @@ import numpy as np
 import config
 
 def get_sequence_length(item):
-    """Extract sequence length from unified data structure"""
-    # All data now uses sequence_length (both proteins and genes)
     return item.get('sequence_length', 0)
 
 def create_length_distribution_chart(data_items, user_min_length=None, user_max_length=None):

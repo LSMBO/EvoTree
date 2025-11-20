@@ -1,9 +1,6 @@
 from nicegui import ui
 import requests
 from datetime import datetime
-import webbrowser
-import threading
-import time
 import config
 import styles
 from search import search_protein, search_genes
@@ -21,7 +18,7 @@ async def handle_search_proteins(protein_name, taxonomy_name, selected_rank):
     
     result = await search_protein(protein_name, taxonomy_name, selected_rank)
     if result and result['success']:
-        create_protein_table(result["uniprot_proteins"], result["ncbi_proteins"])
+        create_protein_table()
         show_sequence_selection_form()
 
 async def handle_search_genes(gene_name, taxonomy_name, selected_rank):
@@ -31,7 +28,7 @@ async def handle_search_genes(gene_name, taxonomy_name, selected_rank):
     
     result = await search_genes(gene_name, taxonomy_name, selected_rank)
     if result and result['success']:
-        create_gene_table(result["ncbi_genes"])
+        create_gene_table()
         show_sequence_selection_form()
 
 

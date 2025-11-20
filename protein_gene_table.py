@@ -1,29 +1,29 @@
 from nicegui import ui
 import config
 
-def create_gene_table(ncbi_data):
+def create_gene_table():
     with config.table_container:
-        if ncbi_data:
-            create_ncbi_table(ncbi_data, mode='gene')
+        if config.ncbi_genes:
+            create_ncbi_table(config.ncbi_genes, mode='gene')
         else:
             ui.markdown('**No NCBI Gene results found**')
 
-def create_protein_table(uniprot_data, ncbi_data):
+def create_protein_table():
     with config.table_container:
         with ui.tabs() as tabs:
-            uniprot_tab = ui.tab(f'UniProtKB ({len(uniprot_data)})')
-            ncbi_tab = ui.tab(f'NCBI ({len(ncbi_data)})')
+            uniprot_tab = ui.tab(f'UniProtKB ({len(config.uniprot_proteins)})')
+            ncbi_tab = ui.tab(f'NCBI ({len(config.ncbi_proteins)})')
         
         with ui.tab_panels(tabs, value=uniprot_tab).classes('w-full'):
             with ui.tab_panel(uniprot_tab):
-                if uniprot_data:
-                    create_uniprot_table(uniprot_data)
+                if config.uniprot_proteins:
+                    create_uniprot_table(config.uniprot_proteins)
                 else:
                     ui.markdown('**No UniProtKB results found**')
             
             with ui.tab_panel(ncbi_tab):
-                if ncbi_data:
-                    create_ncbi_table(ncbi_data, mode="protein")
+                if config.ncbi_proteins:
+                    create_ncbi_table(config.ncbi_proteins, mode="protein")
                 else:
                     ui.markdown('**No NCBI results found**')
 

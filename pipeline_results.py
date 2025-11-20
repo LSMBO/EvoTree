@@ -2,7 +2,7 @@ from nicegui import ui
 import config
 import styles
 from utils import download_file_from_server
-
+from pipeline import create_fasta_from_branch_length, run_full_pipeline
 
 def show_pipeline1_results(pipeline_data):
     with config.pipeline2_launcher_container:
@@ -47,8 +47,7 @@ def show_pipeline2_launcher():
             "Download a FASTA file containing one representative sequence per species. "
             "For nucleotide sequences, you may also continue your analysis on [DataMonkey](http://www.datamonkey.org/)."
         ).classes('text-lg flex-grow')
-        
-        from pipeline import create_fasta_from_branch_length
+
         create_species_fasta_btn = ui.button(
             'Download FASTA',
             on_click=lambda: create_fasta_from_branch_length(True, config.current_fasta_file, config.current_nw_distance_file)
@@ -70,7 +69,6 @@ def show_pipeline2_launcher():
         
         async def handle_pipeline2():
             try:
-                from pipeline import run_full_pipeline
                 config.pipeline2_data = await run_full_pipeline(config.pipeline2_container, run_bmge=True)
                 
                 if config.pipeline2_data != "failed":

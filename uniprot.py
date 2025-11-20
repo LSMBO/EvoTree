@@ -81,7 +81,6 @@ def fetch_rank(taxid, selected_rank):
         print(f"Request failed: {e}")
     return None, None
 
-
 def requests_get(url, params):
     results = []
     try:
@@ -95,7 +94,6 @@ def requests_get(url, params):
             return results
     except requests.exceptions.RequestException as e:
         print(f"Request failed: {e}")
-
 
 async def create_uniprot_fasta(base_url, params, loading_spinner):
     identifier = datetime.now().strftime("%d%m%Y%H%M%S")
