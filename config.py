@@ -69,4 +69,8 @@ pipeline1_container = None
 pipeline2_launcher_container = None
 pipeline2_container = None
 pipeline2_results = None
+run_history_container = None
 loading_spinner = None
+
+# Current run tracking
+current_run_id = None

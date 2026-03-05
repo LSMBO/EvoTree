@@ -6,6 +6,8 @@ import config
 from uniprot import create_uniprot_fasta
 from ncbi import create_ncbi_fasta
 from utils import download_file_from_server
+from run_manager_client import create_run_metadata, update_run_step, get_run_metadata
+from run_card import create_run_card_from_metadata
 
 
 # =============================================================================
@@ -158,91 +160,138 @@ async def merge_uniprot_ncbi_fasta(uniprot_file_path, ncbi_file_path, loading_sp
 # PIPELINE EXECUTION FUNCTIONS  
 # =============================================================================
 
-async def run_full_pipeline(pipeline_container, run_bmge=False):
+async def run_full_pipeline(pipeline_container, run_bmge=False, run_id=None, resume_from_step=None):
+    """
+    Run the full phylogenetic pipeline
+    
+    Args:
+        pipeline_container: UI container for progress display
+        run_bmge: Whether to run BMGE filtering step
+        run_id: Optional run ID (for resuming), otherwise creates new one
+        resume_from_step: Optional step to resume from
+    """
     pipeline_container.clear()
     pipeline_container.set_visibility(True)
     
+    # Create or reuse run_id
+    if run_id is None:
+        run_id = datetime.now().strftime("%d%m%Y%H%M%S")
+    
+    # Store run_id in config for later use
+    config.current_run_id = run_id
+    
+    # Container for the run card that will be updated
+    card_container = None
+    
+    async def update_run_card():
+        """Update the run card display"""
+        if card_container:
+            card_container.clear()
+            with card_container:
+                metadata = await get_run_metadata(run_id)
+                if metadata:
+                    # Simple display without actions during execution
+                    create_run_card_from_metadata(metadata, show_actions=False)
+                else:
+                    ui.label('Loading run information...').classes('text-gray-500')
+    
     with pipeline_container:
-        pipeline_steps = []
+        ui.label('Pipeline Execution').classes(f'text-2xl font-bold text-[{config.VIOLET_COLOR}] mb-4')
         
-        use_custom_fasta = config.select_sequence_active_tab == 'custom_fasta'
+        # Create container for the card
+        card_container = ui.column().classes('w-full')
         
-        if not use_custom_fasta:
-            pipeline_steps.append({"name": "Creating FASTA file", "color": "#FF6B35"})
+        # Initial card display
+        await update_run_card()
         
-        pipeline_steps.append({"name": "Running MAFFT alignment", "color": "#F7931E"})
-        
-        if run_bmge:
-            pipeline_steps += [{"name": "Filtering with BMGE", "color": "#FFD23F"}]
-        pipeline_steps += [
-                {"name": "Building tree with IQTREE", "color": "#06FFA5"},
-                {"name": "Calculating distances", "color": "#4ECDC4"}
-        ]
-        ui.label('Pipeline Progress').classes(f'text-2xl font-bold text-[{config.VIOLET_COLOR}] mb-6')
-        
-        progress_label = ui.label('Starting pipeline...').classes('text-lg font-semibold mb-6 text-center')
-        
-        step_container = ui.row().classes('w-full justify-between mb-3')
-        step_indicators = []
-        for i, step in enumerate(pipeline_steps):
-            with step_container:
-                indicator = ui.column().classes('items-center')
-                with indicator:
-                    circle = ui.element('div').classes(f'w-12 h-12 rounded-full border-4 border-gray-300 flex items-center justify-center text-white font-bold text-lg transition-all duration-500 ease-in-out')
-                    ui.label(step['name']).classes('text-sm text-center mt-3 max-w-24')
-                step_indicators.append((circle, step['color']))
+        # Create a timer to refresh the card every 2 seconds
+        timer = ui.timer(5.0, update_run_card, active=True)
+    
+    use_custom_fasta = config.select_sequence_active_tab == 'custom_fasta'
     
     try:
-        step_offset = 0
+        # Create run metadata at the start (only if not resuming)
+        if resume_from_step is None:
+            await create_run_metadata(run_id, use_bmge=run_bmge)
         
         # Step 1: Custom FASTA upload OR Create FASTA from search
         if use_custom_fasta:
             # Upload custom FASTA to server
-            await update_progress(progress_label, step_indicators, 0, "Uploading custom FASTA file...")
             config.current_fasta_file = await upload_custom_fasta_to_server(
                 config.custom_fasta_content, 
                 config.custom_fasta_filename
             )
             if config.current_fasta_file == 'Failed':
+                await update_run_step(run_id, 'fasta_creation', 'failed')
                 raise Exception("Failed to upload custom FASTA file")
+            await update_run_step(run_id, 'fasta_creation', 'completed', config.current_fasta_file)
         else:
             # Create FASTA from selected_data
-            await update_progress(progress_label, step_indicators, 0, "Creating FASTA file...")
+            await update_run_step(run_id, 'fasta_creation', 'running')
+            
             if run_bmge:
-                config.current_fasta_file = await create_fasta_from_branch_length(download=False, original_fasta_file=config.current_fasta_file, nw_distance_file=config.current_nw_distance_file)
+                # Pipeline 2: Create FASTA from branch lengths
+                # Verify that required files from pipeline 1 exist
+                if not config.current_fasta_file or config.current_fasta_file == 'Failed':
+                    await update_run_step(run_id, 'fasta_creation', 'failed')
+                    raise Exception("Pipeline 2 requires a valid FASTA file from Pipeline 1. Please run Pipeline 1 first.")
+                
+                if not config.current_nw_distance_file or config.current_nw_distance_file == 'Failed':
+                    await update_run_step(run_id, 'fasta_creation', 'failed')
+                    raise Exception("Pipeline 2 requires distance file from Pipeline 1. Please run Pipeline 1 first.")
+                
+                print(f"Creating FASTA from branch lengths...")
+                print(f"  Original FASTA: {config.current_fasta_file}")
+                print(f"  Distance file: {config.current_nw_distance_file}")
+                
+                config.current_fasta_file = await create_fasta_from_branch_length(
+                    download=False, 
+                    original_fasta_file=config.current_fasta_file, 
+                    nw_distance_file=config.current_nw_distance_file
+                )
+                
+                print(f"  Created FASTA: {config.current_fasta_file}")
             else:
+                # Pipeline 1: Create FASTA from selected data
                 config.current_fasta_file = await create_fasta(download=False)
                 
             if config.current_fasta_file == 'Failed':
+                await update_run_step(run_id, 'fasta_creation', 'failed')
                 raise Exception("Failed to create FASTA file")
-            step_offset = 1
+            
+            await update_run_step(run_id, 'fasta_creation', 'completed', config.current_fasta_file)
         
         # Step 2: MAFFT
-        await update_progress(progress_label, step_indicators, step_offset, "Running MAFFT alignment...")
+        await update_run_step(run_id, 'mafft', 'running')
+        print(f"Running MAFFT on: {config.current_fasta_file}")
         config.current_mafft_file = await run_mafft_pipeline(config.current_fasta_file)
-        
-        # config.current_mafft_file = "evotree/simul/29102025131303_Merged_mafft.fasta"
+        print(f"MAFFT result: {config.current_mafft_file}")
+        await update_run_step(run_id, 'mafft', 'completed', config.current_mafft_file)
         
         if run_bmge:
             # Step 3: BMGE  
-            await update_progress(progress_label, step_indicators, step_offset + 1, "Filtering with BMGE...")
+            await update_run_step(run_id, 'bmge', 'running')
             config.current_bmge_file = await run_bmge_pipeline(config.current_mafft_file)
-            
-            # config.current_bmge_file = "evotree/simul/29102025131303_Merged_mafft_bmge.fasta"
+            await update_run_step(run_id, 'bmge', 'completed', config.current_bmge_file)
         else:
             config.current_bmge_file = config.current_mafft_file
+            await update_run_step(run_id, 'bmge', 'skipped')
         
         # Step 4: IQTREE
-        await update_progress(progress_label, step_indicators, step_offset + 1 if not run_bmge else step_offset + 2, "Building phylogenetic tree...")
+        await update_run_step(run_id, 'iqtree', 'running')
         config.current_iqtree_file = await run_iqtree_pipeline(config.current_bmge_file)
-        
-        # config.current_iqtree_file = "evotree/simul/29102025131303_Merged_mafft_bmge.fasta.treefile"
+        await update_run_step(run_id, 'iqtree', 'completed', config.current_iqtree_file)
         
         # Step 5: NW Distance
-        await update_progress(progress_label, step_indicators, step_offset + 2 if not run_bmge else step_offset + 3, "Calculating branch lengths...")
+        await update_run_step(run_id, 'nw_distance', 'running')
         config.current_nw_distance_file = await run_nw_distance_pipeline(config.current_iqtree_file)
+        await update_run_step(run_id, 'nw_distance', 'completed', config.current_nw_distance_file)
         
-        await update_progress(progress_label, step_indicators, len(pipeline_steps), "")
+        # Stop the timer when pipeline completes
+        timer.active = False
+        
+        # Final refresh to show completed state
+        await update_run_card()
 
         return {
             'fasta_file': config.current_fasta_file,
@@ -252,84 +301,101 @@ async def run_full_pipeline(pipeline_container, run_bmge=False):
             'nw_distance_file': config.current_nw_distance_file
         }
     except Exception as e:
-        progress_label.text = f"Pipeline failed: {str(e)}"
+        # Stop the timer on error
+        timer.active = False
         ui.notify(f'Pipeline error: {str(e)}', color='red')
         return "failed"
 
-async def update_progress(progress_label, step_indicators, current_step, message):
-    progress_label.text = message
-    for i, (circle, color) in enumerate(step_indicators):            
-        if i < current_step:
-            circle.classes(replace=f'w-12 h-12 rounded-full border-4 border-green-500 bg-green-500 flex items-center justify-center text-white font-bold text-lg transition-all duration-500 ease-in-out transform scale-110 shadow-lg')
-        elif i == current_step:
-            circle.classes(replace=f'w-12 h-12 rounded-full border-4 flex items-center justify-center text-white font-bold text-lg transition-all duration-300 ease-in-out transform scale-125 shadow-2xl animate-bounce')
-            circle.style(f'border-color: {color}; background-color: {color}; box-shadow: 0 0 20px {color}50;')
-            circle.text = str(i + 1)
-        else:
-            circle.classes(replace=f'w-12 h-12 rounded-full border-4 border-gray-300 bg-gray-100 flex items-center justify-center text-gray-500 font-bold text-lg transition-all duration-500 ease-in-out')
-            circle.text = str(i + 1)
+async def run_pipeline_job(tool_name, start_endpoint, status_endpoint, params, max_wait_seconds=3600):
+    """
+    Generic function to run a pipeline job with timeout
+    
+    Args:
+        tool_name: Name of the tool (for error messages)
+        start_endpoint: API endpoint to start the job
+        status_endpoint: API endpoint to check job status
+        params: Parameters for the start request
+        max_wait_seconds: Maximum seconds to wait for completion (default 1 hour)
+    """
+    async with httpx.AsyncClient(timeout=30) as client:
+        try:
+            # Start the job
+            response = await client.post(f"{config.API_BASE_URL}{start_endpoint}", json=params)
+            if response.status_code != 200:
+                raise Exception(f"{tool_name} request failed with status code: {response.status_code}")
+            
+            job_id = response.json()['job_id']
+            elapsed_time = 0
+            unknown_count = 0  # Count consecutive 'unknown' responses
+            last_known_status = 'running'
+            
+            # Poll for completion
+            while elapsed_time < max_wait_seconds:
+                await asyncio.sleep(2)
+                elapsed_time += 2
+                
+                try:
+                    status_resp = await client.get(f"{config.API_BASE_URL}{status_endpoint}?id={job_id}")
+                    status_data = status_resp.json()
+                    current_status = status_data.get('status', 'unknown')
+                    
+                    if current_status == 'finished':
+                        return status_data['file']
+                    elif current_status == 'error':
+                        raise Exception(f"{tool_name} error: {status_data.get('message', 'Unknown error')}")
+                    elif current_status == 'unknown':
+                        unknown_count += 1
+                        # Give more tolerance for 'unknown' status (job might be completing)
+                        # Wait up to 60 seconds before giving up
+                        if unknown_count >= 30:  # 30 checks * 2 seconds = 60 seconds
+                            raise Exception(f"{tool_name} job not found after {unknown_count * 2} seconds (job_id: {job_id})")
+                    elif current_status == 'running':
+                        last_known_status = 'running'
+                        unknown_count = 0  # Reset count if we get a valid status
+                        
+                except httpx.ReadTimeout:
+                    # Continue polling if status check times out
+                    continue
+                    
+            # Timeout reached
+            raise Exception(f"{tool_name} timeout after {max_wait_seconds} seconds (last status: {last_known_status})")
+            
+        except httpx.RequestError as e:
+            raise Exception(f"{tool_name} connection error: {str(e)}")
 
 async def run_mafft_pipeline(fasta_file_path):
-    async with httpx.AsyncClient() as client:
-        response = await client.post(f"{config.API_BASE_URL}/mafft_start", json={"fasta_file": fasta_file_path}, timeout=10)
-        if response.status_code == 200:
-            job_id = response.json()['job_id']
-            while True:
-                await asyncio.sleep(2)
-                status_resp = await client.get(f"{config.API_BASE_URL}/mafft_status?id={job_id}")
-                status_data = status_resp.json()
-                if status_data['status'] == 'finished':
-                    return status_data['file']
-                elif status_data['status'] == 'error':
-                    raise Exception(f"MAFFT error: {status_data.get('message', '')}")
-        else:
-            raise Exception(f"MAFFT request failed with status code: {response.status_code}")
+    return await run_pipeline_job(
+        "MAFFT",
+        "/mafft_start",
+        "/mafft_status",
+        {"fasta_file": fasta_file_path},
+        max_wait_seconds=1800  # 30 minutes
+    )
 
 async def run_bmge_pipeline(mafft_file_path):
-    async with httpx.AsyncClient() as client:
-        response = await client.post(f"{config.API_BASE_URL}/bmge_start", json={"fasta_file": mafft_file_path}, timeout=10)
-        if response.status_code == 200:
-            job_id = response.json()['job_id']
-            while True:
-                await asyncio.sleep(2)
-                status_resp = await client.get(f"{config.API_BASE_URL}/bmge_status?id={job_id}")
-                status_data = status_resp.json()
-                if status_data['status'] == 'finished':
-                    return status_data['file']
-                elif status_data['status'] == 'error':
-                    raise Exception(f"BMGE error: {status_data.get('message', '')}")
-        else:
-            raise Exception(f"BMGE request failed with status code: {response.status_code}")
+    return await run_pipeline_job(
+        "BMGE",
+        "/bmge_start",
+        "/bmge_status",
+        {"fasta_file": mafft_file_path},
+        max_wait_seconds=600  # 10 minutes
+    )
 
 async def run_iqtree_pipeline(file_path):
-    async with httpx.AsyncClient() as client:
-        response = await client.post(f"{config.API_BASE_URL}/iqtree_start", json={"fasta_file": file_path}, timeout=10)
-        if response.status_code == 200:
-            job_id = response.json()['job_id']
-            while True:
-                await asyncio.sleep(2)
-                status_resp = await client.get(f"{config.API_BASE_URL}/iqtree_status?id={job_id}")
-                status_data = status_resp.json()
-                if status_data['status'] == 'finished':
-                    return status_data['file']
-                elif status_data['status'] == 'error':
-                    raise Exception(f"IQTREE error: {status_data.get('message', '')}")
-        else:
-            raise Exception(f"IQTREE request failed with status code: {response.status_code}")
+    return await run_pipeline_job(
+        "IQTREE",
+        "/iqtree_start",
+        "/iqtree_status",
+        {"fasta_file": file_path},
+        max_wait_seconds=7200  # 2 hours
+    )
 
 async def run_nw_distance_pipeline(treefile):
-    async with httpx.AsyncClient() as client:
-        response = await client.post(f"{config.API_BASE_URL}/nw_distance_start", json={"treefile": treefile}, timeout=10)
-        if response.status_code == 200:
-            job_id = response.json()['job_id']
-            while True:
-                await asyncio.sleep(2)
-                status_resp = await client.get(f"{config.API_BASE_URL}/nw_distance_status?id={job_id}")
-                status_data = status_resp.json()
-                if status_data['status'] == 'finished':
-                    return status_data['file']
-                elif status_data['status'] == 'error':
-                    raise Exception(f"NW Distance error: {status_data.get('message', '')}")
-        else:
-            raise Exception(f"NW Distance request failed with status code: {response.status_code}")
+    return await run_pipeline_job(
+        "NW Distance",
+        "/nw_distance_start",
+        "/nw_distance_status",
+        {"treefile": treefile},
+        max_wait_seconds=300  # 5 minutes
+    )
         

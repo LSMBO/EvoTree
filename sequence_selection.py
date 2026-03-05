@@ -19,8 +19,8 @@ def show_sequence_selection_form():
         with ui.tabs().classes('w-full') as tabs:
             database_tab = ui.tab('Sequences from the search')
             custom_tab = ui.tab('Custom FASTA')
-        
-        tabs.on_value_change(lambda e: switch_to_tab(e.value, database_tab))
+
+        tabs.on_value_change(lambda e: switch_to_tab(tabs.value, database_tab))
         
         with ui.tab_panels(tabs, value=database_tab).classes('w-full'):
             with ui.tab_panel(database_tab):
@@ -116,12 +116,13 @@ def show_sequence_selection_form():
 # TAB MANAGEMENT
 # =============================================================================
 
-def switch_to_tab(tab_value, database_tab):
-    if tab_value == database_tab:
+def switch_to_tab(selected_tab, database_tab):
+    if selected_tab is database_tab:
         switch_to_database_tab()
     else:
         switch_to_custom_tab()
 
+    
 def switch_to_database_tab():
     config.select_sequence_active_tab = 'sequences_from_search'
     
@@ -130,8 +131,8 @@ def switch_to_database_tab():
     else:
         config.selected_data = config.all_proteins
     
-    # Update the UI buttons to reflect database data
-    update_database_buttons()
+    # # Update the UI buttons to reflect database data
+    # update_database_buttons()
 
 def switch_to_custom_tab():
     config.select_sequence_active_tab = 'custom_fasta'
