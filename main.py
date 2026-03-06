@@ -6,12 +6,12 @@ import styles
 from search import search_protein, search_genes
 from protein_gene_table import create_protein_table, create_gene_table
 from sequence_selection import show_sequence_selection_form
-from run_history import show_run_history
+from simple_pipeline_client import show_run_history
 
 with ui.row().classes('w-full justify-between items-center mb-4'):
     ui.label('EvoTree').style(f'color: {config.VIOLET_COLOR}; font-size: 2rem; font-weight: bold; text-align: center;')
     
-    history_btn = ui.button('📜 Run History', on_click=lambda: show_run_history()).classes('ml-auto')
+    history_btn = ui.button('📜 History', on_click=lambda: show_run_history()).classes('ml-auto')
     styles.apply_default_color(history_btn)
 
 
@@ -76,17 +76,8 @@ config.sequence_selection_container.set_visibility(False)
 config.length_distribution_container = ui.column().classes('w-full mt-4') 
 config.length_distribution_container.set_visibility(False)
 
-config.pipeline1_container = ui.card().classes(f'w-full border-2 border-[{config.VIOLET_COLOR}] rounded-xl shadow-lg p-6')
-config.pipeline1_container.set_visibility(False)
-
-config.pipeline2_launcher_container = ui.card().classes(f'w-full border-2 border-[{config.VIOLET_COLOR}] rounded-xl shadow-lg p-6')
-config.pipeline2_launcher_container.set_visibility(False)
-
-config.pipeline2_container = ui.card().classes(f'w-full border-2 border-[{config.VIOLET_COLOR}] rounded-xl shadow-lg p-6')
-config.pipeline2_container.set_visibility(False)
-
-config.pipeline2_results = ui.card().classes(f'w-full border-2 border-[{config.VIOLET_COLOR}] rounded-xl shadow-lg p-6')
-config.pipeline2_results.set_visibility(False)
+config.pipeline_container = ui.card().classes(f'w-full border-2 border-[{config.VIOLET_COLOR}] rounded-xl shadow-lg p-6')
+config.pipeline_container.set_visibility(False)
 
 config.run_history_container = ui.card().classes(f'w-full border-2 border-[{config.VIOLET_COLOR}] rounded-xl shadow-lg p-6')
 config.run_history_container.set_visibility(False)

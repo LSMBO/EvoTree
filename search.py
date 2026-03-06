@@ -226,18 +226,6 @@ def reset_search_state():
     config.length_distribution_container.clear()
     config.length_distribution_container.set_visibility(False)
     
-    config.pipeline1_container.clear()
-    config.pipeline1_container.set_visibility(False)
-    
-    config.pipeline2_launcher_container.clear()
-    config.pipeline2_launcher_container.set_visibility(False)
-    
-    config.pipeline2_container.clear()
-    config.pipeline2_container.set_visibility(False)
-    
-    config.pipeline2_results.clear()
-    config.pipeline2_results.set_visibility(False)
-    
     config.uniprot_proteins = []
     config.ncbi_proteins = []
     config.ncbi_genes = []

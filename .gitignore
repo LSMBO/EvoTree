@@ -25,3 +25,20 @@ Thumbs.db
 *.tmp
 *.log
 
+# Obsolete files (old complex architecture - can be deleted)
+# Server-side:
+copy_flask/mafft.py
+copy_flask/bmge.py
+copy_flask/iqtree.py
+copy_flask/nw_distance.py
+copy_flask/run_manager.py
+copy_flask/tmp/runs/
+
+# Client-side:
+pipeline.py
+pipeline_results.py
+run_card.py
+run_history.py
+run_manager_client.py
+RUN_MANAGER_DOCUMENTATION.md
+

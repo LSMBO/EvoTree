@@ -4,8 +4,8 @@ import asyncio
 import config
 import styles
 from length_distribution import create_length_distribution_chart, get_sequence_length
-from pipeline import create_fasta, run_full_pipeline
-from pipeline_results import show_pipeline1_results
+from simple_pipeline_client import show_simple_pipeline
+from fasta_utils import create_fasta
 from ncbi import mrna_from_mrna_accession
 from Bio import SeqIO
 from io import StringIO
@@ -480,27 +480,11 @@ def show_species_list_custom(species_list):
     dialog.open()
 
 async def handle_pipeline1():
+    """Launch simple pipeline"""
     try:
-        config.pipeline1_container.clear()
-        config.pipeline1_container.set_visibility(False)
+        # Show simple pipeline interface
+        await show_simple_pipeline()
         
-        config.pipeline2_launcher_container.clear()
-        config.pipeline2_launcher_container.set_visibility(False)
-        
-        config.pipeline2_container.clear()
-        config.pipeline2_container.set_visibility(False)
-        
-        config.pipeline2_results.clear()
-        config.pipeline2_results.set_visibility(False)
-
-        config.pipeline1_data = await run_full_pipeline(config.pipeline1_container, run_bmge=False)
-        
-        if config.pipeline1_data != "failed":
-            ui.notify('Pipeline completed successfully!', color='positive')
-
-            show_pipeline1_results(config.pipeline1_data)
-        else:
-            ui.notify('Pipeline failed', color='negative')
     except Exception as e:
         ui.notify(f'Pipeline error: {str(e)}', color='negative')
 
